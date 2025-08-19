@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>iliaraouf</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <h1 class="logo">iliaraouf<span>Songs</span></h1>
+    <nav aria-label="Primary Navigation">
+      <ul>
+        <li><a href="#home">Home</a></li>
+        <li><a href="#music">Music</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section id="home" class="section hero" tabindex="0" aria-label="Home section">
+    <h2>Welcome to My Music Space</h2>
+    <p>hope you like it </p>
+  </section>
+
+  <section id="music" class="section music-section" aria-label="Music Upload Section">
+    <h3>My Songs</h3>
+
+    <form id="uploadForm" class="upload-form" aria-label="Upload music form">
+      <label for="musicUpload">Upload tracks (MP3 only):</label>
+      <input type="file" id="musicUpload" accept=".mp3,audio/mpeg" multiple required aria-required="true" />
+      <button type="submit" disabled>Upload &amp; Play</button>
+      <p class="note"></p>
+    </form>
+
+    <div id="trackList" aria-live="polite" aria-atomic="true"></div>
+  </section>
+
+  <section id="about" class="section about-section" tabindex="0" aria-label="About section">
+    <h3>About</h3>
+    <p>I'm iliaraouf Azad-Islamic University student,this site is part of my creativity,hope you like it!</p>
+  </section>
+
+  <section id="contact" class="section contact-section" tabindex="0" aria-label="Contact section">
+    <h3>Contact</h3>
+    <p>telegram ID : <a href="https://t.me/iliaraouf1" style="color: aliceblue;">@iliaraouf1</a></p>
+  </section>
+</main>
+
+<footer>
+  <p>&copy; 2025 iliaraouf</p>
+</footer>
+
+<script>
+  // IndexedDB setup
+  const DB_NAME = 'PersonalMusicDB';
+  const DB_VERSION = 1;
+  const STORE_NAME = 'tracks';
+
+  let db;
+
+  const trackList = document.getElementById('trackList');
+  const uploadForm = document.getElementById('uploadForm');
+  const musicUpload = document.getElementById('musicUpload');
+  const uploadBtn = uploadForm.querySelector('button');
+
+  // Enable upload button only if files selected and valid
+  musicUpload.addEventListener('change', () => {
+    const files = musicUpload.files;
+    let valid = files.length > 0;
+    for (const file of files) {
+      if (!(file.type === 'audio/mp3' || file.type === 'audio/mpeg' || file.name.endsWith('.mp3'))) {
+        valid = false;
+        break;
+      }
+    }
+    uploadBtn.disabled = !valid;
+  });
+
+  // Open IndexedDB and create object store if needed
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        db = request.result;
+        resolve(db);
+      };
+      request.onupgradeneeded = (e) => {
+        db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+        }
+      };
+    });
+  }
+
+  // Add a track (file blob) to IndexedDB
+  function addTrack(name, blob) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const item = { name, blob };
+      const req = store.add(item);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // Get all tracks from IndexedDB
+  function getAllTracks() {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // Delete track by id
+  function deleteTrack(id) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // Render all tracks to DOM
+  async function renderTracks() {
+    trackList.innerHTML = '';
+    const tracks = await getAllTracks();
+
+    if (tracks.length === 0) {
+      trackList.innerHTML = `<p style="text-align:center;color:#888;">No tracks uploaded yet.</p>`;
+      return;
+    }
+
+    tracks.forEach(track => {
+      const trackDiv = document.createElement('div');
+      trackDiv.classList.add('track');
+      trackDiv.setAttribute('data-id', track.id);
+
+      const url = URL.createObjectURL(track.blob);
+
+      trackDiv.innerHTML = `
+        <div class="track-header">
+          <h4>${track.name}</h4>
+          <button class="delete-btn" aria-label="Delete track ${track.name}" title="Delete this track">&times;</button>
+        </div>
+        <audio controls preload="metadata" tabindex="0" aria-label="Audio player for ${track.name}">
+          <source src="${url}" type="audio/mpeg" />
+          Your browser does not support the audio element.
+        </audio>
+      `;
+
+      trackDiv.querySelector('.delete-btn').addEventListener('click', async () => {
+        if (confirm(`Are you sure you want to delete "${track.name}"?`)) {
+          URL.revokeObjectURL(url); // free memory
+          await deleteTrack(track.id);
+          await renderTracks();
+        }
+      });
+
+      trackList.appendChild(trackDiv);
+    });
+  }
+
+  // Initialize DB and render tracks
+  openDB().then(() => renderTracks()).catch(console.error);
+
+  // Handle form submission to upload tracks
+  uploadForm.addEventListener('submit', async e => {
+    e.preventDefault();
+
+    const files = Array.from(musicUpload.files);
+    if (files.length === 0) {
+      alert('Please select one or more MP3 files to upload.');
+      return;
+    }
+
+    uploadBtn.disabled = true;
+    try {
+      for (const file of files) {
+        if (!(file.type === 'audio/mp3' || file.type === 'audio/mpeg' || file.name.endsWith('.mp3'))) {
+          alert(`File "${file.name}" is not an MP3. Skipping.`);
+          continue;
+        }
+        await addTrack(file.name.replace(/\.[^/.]+$/, ''), file);
+      }
+      musicUpload.value = '';
+      await renderTracks();
+    } catch (err) {
+      alert('Error uploading files: ' + err.message);
+    }
+    uploadBtn.disabled = true;
+  });
+</script>
+
+</body>
+</html>
